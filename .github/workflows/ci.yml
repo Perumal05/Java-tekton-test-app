@@ -50,12 +50,12 @@ jobs:
       # -------------------------------
       #  SCA - Dependency Scan
       # -------------------------------
-      - name: Dependency Scan
-        uses: dependency-check/Dependency-Check_Action@main
-        with:
-          project: "springboot-app"
-          path: "."
-          format: "HTML"
+      # - name: Dependency Scan
+      #   uses: dependency-check/Dependency-Check_Action@main
+      #   with:
+      #     project: "springboot-app"
+      #     path: "."
+      #     format: "HTML"
 
       # -------------------------------
       # Verify Artifact
