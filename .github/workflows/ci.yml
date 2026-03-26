@@ -153,6 +153,10 @@ jobs:
           echo "✅ Dockerfile generated"
           cat Dockerfile
 
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       # -------------------------------
       # Docker Build
       # -------------------------------
