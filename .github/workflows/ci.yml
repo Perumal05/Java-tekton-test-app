@@ -6,7 +6,6 @@ on:
   pull_request:
 
 env:
-  IMAGE_NAME: springboot-app
   REGISTRY: ghcr.io
 
 jobs:
@@ -33,29 +32,18 @@ jobs:
           java-version: '21'
 
       # -------------------------------
-      # ✅ SAST - CodeQL (FIXED ORDER)
+      # SAST - CodeQL
       # -------------------------------
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
           languages: java
 
-      # ✅ Build AFTER init (critical fix)
       - name: Build for CodeQL + Tests
         run: mvn clean verify
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-
-      # -------------------------------
-      #  SCA - Dependency Scan
-      # -------------------------------
-      # - name: Dependency Scan
-      #   uses: dependency-check/Dependency-Check_Action@main
-      #   with:
-      #     project: "springboot-app"
-      #     path: "."
-      #     format: "HTML"
 
       # -------------------------------
       # Verify Artifact
@@ -65,14 +53,12 @@ jobs:
           ls target/*.jar || (echo "❌ No JAR found" && exit 1)
 
       # -------------------------------
-      # Dockerfile Generation (Your Script)
+      # Dockerfile Generation
       # -------------------------------
       - name: Generate Dockerfile
         run: |
           #!/bin/sh
           set -e
-
-          echo "🔍 Detecting Java project..."
 
           BUILD_TOOL=""
           ARTIFACT_PATH=""
@@ -81,17 +67,9 @@ jobs:
           PORT="8080"
 
           if [ -f pom.xml ]; then
-            BUILD_TOOL="maven"
             ARTIFACT_PATH="target"
-            echo "Detected Maven project"
-            JAVA_VERSION=$(grep -oPm1 "(?<=<maven.compiler.target>)[^<]+" pom.xml || echo "21")
-
           elif [ -f build.gradle ] || [ -f build.gradle.kts ]; then
-            BUILD_TOOL="gradle"
             ARTIFACT_PATH="build/libs"
-            echo "Detected Gradle project"
-            JAVA_VERSION=$(grep -oP "sourceCompatibility\s*=\s*['\"]?\K[0-9]+" build.gradle 2>/dev/null || echo "21")
-
           else
             echo "❌ Unknown Java project"
             exit 1
@@ -101,76 +79,52 @@ jobs:
             ARTIFACT_TYPE="war"
           fi
 
-          if [ -f src/main/resources/application.properties ]; then
-            PORT=$(grep -oP "(?<=server.port=)[0-9]+" src/main/resources/application.properties || echo "8080")
-          fi
-
-          if [ -f src/main/resources/application.yml ]; then
-            PORT=$(grep -A1 "server:" src/main/resources/application.yml | grep port | awk '{print $2}' || echo "8080")
-          fi
-
-          echo "-----------------------------------"
-          echo "Build Tool : $BUILD_TOOL"
-          echo "Artifact   : $ARTIFACT_TYPE"
-          echo "Java       : $JAVA_VERSION"
-          echo "Port       : $PORT"
-          echo "-----------------------------------"
-
           echo "PORT=$PORT" >> $GITHUB_ENV
 
           if [ -f Dockerfile ]; then
-            echo "⚠️ Dockerfile already exists. Skipping generation."
-            cat Dockerfile
+            echo "Dockerfile exists, skipping"
             exit 0
           fi
-
-          echo "⚙️ Generating Dockerfile..."
 
           if [ "$ARTIFACT_TYPE" = "war" ]; then
           cat <<EOF > Dockerfile
           FROM tomcat:10.1-jre${JAVA_VERSION}
-          RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*
           COPY ${ARTIFACT_PATH}/*.war /usr/local/tomcat/webapps/app.war
           EXPOSE ${PORT}
-          HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-            CMD curl -f http://localhost:${PORT}/ || exit 1
           CMD ["catalina.sh","run"]
           EOF
-
           else
           cat <<EOF > Dockerfile
           FROM eclipse-temurin:${JAVA_VERSION}-jre-alpine
-          RUN apk add --no-cache curl && apk upgrade --no-cache
+          RUN apk add --no-cache curl
           WORKDIR /app
           COPY ${ARTIFACT_PATH}/*.jar /app/app.jar
           EXPOSE ${PORT}
-          HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
-            CMD curl -f http://localhost:${PORT}/actuator/health || exit 1
           ENTRYPOINT ["java","-jar","/app/app.jar"]
           EOF
           fi
 
-          echo "✅ Dockerfile generated"
-          cat Dockerfile
-
+      # -------------------------------
+      # ✅ FIX: Normalize repo name
+      # -------------------------------
       - name: Set lowercase image name
         run: |
           echo "IMAGE_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       # -------------------------------
-      # Docker Build
+      # Docker Build (FIXED)
       # -------------------------------
       - name: Build Docker Image
         run: |
-          docker build -t $REGISTRY/${{ github.repository }}:${{ github.sha }} .
+          docker build -t $REGISTRY/$IMAGE_REPO:${{ github.sha }} .
 
       # -------------------------------
-      # Image Scan
+      # Image Scan (FIXED)
       # -------------------------------
       - name: Scan Docker Image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}:${{ github.sha }}
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}:${{ github.sha }}
           format: 'table'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
@@ -189,7 +143,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Push Image
+      # ✅ FIX: regenerate lowercase (new job = new env)
+      - name: Set lowercase image name
+        run: |
+          echo "IMAGE_REPO=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
+      # Push Image (FIXED)
       - name: Push Docker Image
         run: |
-          docker push $REGISTRY/${{ github.repository }}:${{ github.sha }}
+          docker push $REGISTRY/$IMAGE_REPO:${{ github.sha }}
