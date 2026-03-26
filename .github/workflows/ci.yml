@@ -126,7 +126,7 @@ jobs:
         with:
           image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_REPO }}:${{ github.sha }}
           format: 'table'
-          severity: 'CRITICAL'
+          severity: ''
           exit-code: '1'
           ignore-unfixed: true
 
